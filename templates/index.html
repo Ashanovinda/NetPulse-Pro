@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>NetPulse Pro: Security SOC</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { background-color: #121212; color: #00ff00; font-family: monospace; padding: 20px; display: flex; flex-direction: column; align-items: center; transition: background-color 0.2s;}
+        h1 { text-align: center; color: #00ffcc; margin-bottom: 20px;}
+        #container { display: flex; width: 100%; gap: 20px; z-index: 10;}
+        #map { height: 600px; width: 65%; border: 2px solid #333; border-radius: 8px;}
+        #right-panel { display: flex; flex-direction: column; width: 35%; gap: 20px; }
+        #log { border: 1px solid #333; height: 330px; overflow-y: scroll; padding: 10px; background: #0a0a0a; border-radius: 8px;}
+        #chart-container { background: #0a0a0a; border: 1px solid #333; border-radius: 8px; padding: 10px; height: 230px;}
+        
+        .packet { border-bottom: 1px solid #222; padding: 8px; font-size: 13px;}
+        .src { color: #00ffff; }
+        .dst { color: #ff00ff; }
+        .proto { color: #ff9900; font-weight: bold;}
+        .geo { color: #aaaaaa; font-size: 11px; display: block; margin-top: 4px;}
+        
+        /* --- අලුත්: Device වල පෙනුම --- */
+        .device { color: #ff66ff; font-size: 11px; background: #220022; padding: 2px 4px; border-radius: 3px; border: 1px solid #550055;}
+
+        @keyframes sirenFlash { 0% { box-shadow: inset 0 0 0px #ff0000; background-color: #121212; } 50% { box-shadow: inset 0 0 150px #ff0000; background-color: #4a0000; } 100% { box-shadow: inset 0 0 0px #ff0000; background-color: #121212; } }
+        .alert-mode { animation: sirenFlash 0.5s 3; } 
+        .threat-packet { background-color: #330000 !important; border-left: 5px solid #ff0000 !important; color: #ffcccc !important; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h1>NetPulse Pro: Global Security Monitor</h1>
+    <div id="container">
+        <div id="map"></div>
+        <div id="right-panel">
+            <div id="log"></div>
+            <div id="chart-container"><canvas id="protoChart"></canvas></div>
+        </div>
+    </div>
+
+    <script>
+        var map = L.map('map').setView([20, 0], 2); 
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+
+        var ctx = document.getElementById('protoChart').getContext('2d');
+        var protoCounts = {'HTTPS': 0, 'HTTP': 0, 'DNS': 0, 'TCP': 0, 'UDP': 0, 'ICMP': 0, 'Other': 0};
+        var protoChart = new Chart(ctx, { type: 'doughnut', data: { labels: Object.keys(protoCounts), datasets: [{ data: Object.values(protoCounts), backgroundColor: ['#00ffcc', '#ff3366', '#ffff00', '#3366ff', '#ff9900', '#ff0000', '#888888'], borderWidth: 1, borderColor: '#121212' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#ffffff', font: { size: 11, family: 'monospace' } } } } } });
+
+        var socket = io();
+        var logDiv = document.getElementById('log');
+
+        socket.on('new_packet', function(data) {
+            if (protoCounts[data.proto] !== undefined) protoCounts[data.proto]++; else protoCounts['Other']++;
+            protoChart.data.datasets[0].data = Object.values(protoCounts); protoChart.update();
+
+            var p = document.createElement('div');
+            
+            // --- අලුත්: Device නම Log එකට එකතු කිරීම ---
+            var srcStr = "<span class='src'>" + data.src + "</span> <span class='device'>💻 " + data.device_src + "</span>";
+            var dstStr = "<span class='dst'>" + data.dst + "</span> <span class='device'>💻 " + data.device_dst + "</span>";
+
+            if (data.is_threat) {
+                p.className = 'packet threat-packet';
+                var logHtml = "🚨 <b>[THREAT]</b> [<span style='color:#fff;'>" + data.proto + "</span>] " + srcStr + " &rarr; " + dstStr;
+                document.body.classList.remove('alert-mode'); void document.body.offsetWidth; document.body.classList.add('alert-mode');
+            } else {
+                p.className = 'packet';
+                var logHtml = "[<span class='proto'>" + data.proto + "</span>] " + srcStr + " &rarr; " + dstStr;
+            }
+            
+            if (data.geo) {
+                logHtml += "<span class='geo'>📍 " + data.geo.city + ", " + data.geo.country + "</span>";
+                var markerColor = data.is_threat ? '#ff0000' : '#00ffcc';
+                var circle = L.circleMarker([data.geo.lat, data.geo.lon], { color: markerColor, fillColor: markerColor, fillOpacity: 0.8, radius: data.is_threat ? 8 : 5 }).addTo(map);
+                setTimeout(function() { map.removeLayer(circle); }, 2000);
+            }
+
+            p.innerHTML = logHtml; logDiv.insertBefore(p, logDiv.firstChild);
+            if (logDiv.children.length > 50) logDiv.removeChild(logDiv.lastChild);
+        });
+    </script>
+</body>
+</html>
