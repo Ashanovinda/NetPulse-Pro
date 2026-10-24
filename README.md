@@ -1,4 +1,4 @@
-cat << 'EOF' > README.md
+
 # NetPulse Pro 
 
 NetPulse Pro is an advanced network packet and traffic logging application built specifically for enterprise environments, designed and executed on **Rocky Linux**. It features automated alert thresholds, device fingerprinting, and local data persistence via SQLite.
